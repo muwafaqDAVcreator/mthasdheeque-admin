@@ -9,40 +9,37 @@ function App() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('dashboard');
     const [projects, setProjects] = useState([]);
-    const [blogs, setBlogs] = useState([]);
-    const [testimonials, setTestimonials] = useState([]);
-    const [skills, setSkills] = useState([]);
     const [contacts, setContacts] = useState([]);
     const [subscribers, setSubscribers] = useState([]);
+    const [showForm, setShowForm] = useState(false);
+    const [formData, setFormData] = useState({});
+    const [editingId, setEditingId] = useState(null);
+    const [token, setToken] = useState('');
 
     useEffect(() => {
-        const token = localStorage.getItem('adminToken');
-        if (token) {
+        const savedToken = localStorage.getItem('adminToken');
+        if (savedToken) {
+            setToken(savedToken);
             setIsLoggedIn(true);
-            fetchAllData(token);
+            fetchAllData(savedToken);
         }
     }, []);
 
-    const fetchAllData = async (token) => {
+    const fetchAllData = async (authToken) => {
         try {
-            const headers = { 'Authorization': `Bearer ${token}` };
+            const headers = { 'Authorization': `Bearer ${authToken}` };
 
-            const [projRes, blogRes, testRes, skillRes, contactRes, subRes] = await Promise.all([
+            const [projRes, contactRes, subRes] = await Promise.all([
                 fetch(`${API_URL}/projects`, { headers }),
-                fetch(`${API_URL}/blog`, { headers }),
-                fetch(`${API_URL}/testimonials`, { headers }),
-                fetch(`${API_URL}/skills`, { headers }),
                 fetch(`${API_URL}/contact`, { headers }),
                 fetch(`${API_URL}/newsletter`, { headers })
             ]);
 
             if (projRes.ok) setProjects(await projRes.json());
-            if (blogRes.ok) setBlogs(await blogRes.json());
-            if (testRes.ok) setTestimonials(await testRes.json());
-            if (skillRes.ok) setSkills(await skillRes.json());
             if (contactRes.ok) setContacts(await contactRes.json());
             if (subRes.ok) setSubscribers(await subRes.json());
         } catch (err) {
@@ -65,6 +62,7 @@ function App() {
             const data = await response.json();
 
             if (response.ok) {
+                setToken(data.token);
                 localStorage.setItem('adminToken', data.token);
                 setIsLoggedIn(true);
                 fetchAllData(data.token);
@@ -83,8 +81,106 @@ function App() {
     const handleLogout = () => {
         localStorage.removeItem('adminToken');
         setIsLoggedIn(false);
+        setToken('');
         setUsername('');
         setPassword('');
+    };
+
+    const handleAddProject = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+
+        try {
+            const method = editingId ? 'PATCH' : 'POST';
+            const url = editingId ? `${API_URL}/projects/${editingId}` : `${API_URL}/projects`;
+
+            const response = await fetch(url, {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    name: formData.name,
+                    description: formData.description,
+                    category: formData.category,
+                    location: formData.location,
+                    value: formData.value,
+                    published: formData.published || false,
+                    tags: formData.tags ? formData.tags.split(',').map(t => t.trim()) : []
+                })
+            });
+
+            if (response.ok) {
+                setSuccess(editingId ? 'Project updated!' : 'Project created!');
+                setShowForm(false);
+                setFormData({});
+                setEditingId(null);
+                fetchAllData(token);
+                setTimeout(() => setSuccess(''), 3000);
+            }
+        } catch (err) {
+            setError('Failed to save project');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDeleteProject = async (id) => {
+        if (!window.confirm('Delete this project?')) return;
+
+        try {
+            const response = await fetch(`${API_URL}/projects/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                setSuccess('Project deleted!');
+                fetchAllData(token);
+                setTimeout(() => setSuccess(''), 3000);
+            }
+        } catch (err) {
+            setError('Failed to delete project');
+        }
+    };
+
+    const handleDeleteContact = async (id) => {
+        if (!window.confirm('Delete this message?')) return;
+
+        try {
+            const response = await fetch(`${API_URL}/contact/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                setSuccess('Message deleted!');
+                fetchAllData(token);
+                setTimeout(() => setSuccess(''), 3000);
+            }
+        } catch (err) {
+            setError('Failed to delete message');
+        }
+    };
+
+    const handleDeleteSubscriber = async (id) => {
+        if (!window.confirm('Delete this subscriber?')) return;
+
+        try {
+            const response = await fetch(`${API_URL}/newsletter/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                setSuccess('Subscriber deleted!');
+                fetchAllData(token);
+                setTimeout(() => setSuccess(''), 3000);
+            }
+        } catch (err) {
+            setError('Failed to delete subscriber');
+        }
     };
 
     if (!isLoggedIn) {
@@ -133,49 +229,14 @@ function App() {
                 <button className="logout-btn" onClick={handleLogout}>Logout</button>
             </div>
 
+            {success && <div className="success">{success}</div>}
+            {error && <div className="error">{error}</div>}
+
             <div className="tabs">
-                <button
-                    className={`tab ${activeTab === 'dashboard' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('dashboard')}
-                >
-                    Dashboard
-                </button>
-                <button
-                    className={`tab ${activeTab === 'projects' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('projects')}
-                >
-                    Projects ({projects.length})
-                </button>
-                <button
-                    className={`tab ${activeTab === 'blog' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('blog')}
-                >
-                    Blog ({blogs.length})
-                </button>
-                <button
-                    className={`tab ${activeTab === 'testimonials' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('testimonials')}
-                >
-                    Testimonials ({testimonials.length})
-                </button>
-                <button
-                    className={`tab ${activeTab === 'skills' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('skills')}
-                >
-                    Skills ({skills.length})
-                </button>
-                <button
-                    className={`tab ${activeTab === 'contacts' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('contacts')}
-                >
-                    Messages ({contacts.length})
-                </button>
-                <button
-                    className={`tab ${activeTab === 'subscribers' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('subscribers')}
-                >
-                    Subscribers ({subscribers.length})
-                </button>
+                <button className={`tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
+                <button className={`tab ${activeTab === 'projects' ? 'active' : ''}`} onClick={() => setActiveTab('projects')}>Projects ({projects.length})</button>
+                <button className={`tab ${activeTab === 'contacts' ? 'active' : ''}`} onClick={() => setActiveTab('contacts')}>Messages ({contacts.length})</button>
+                <button className={`tab ${activeTab === 'subscribers' ? 'active' : ''}`} onClick={() => setActiveTab('subscribers')}>Subscribers ({subscribers.length})</button>
             </div>
 
             <div className="content">
@@ -184,18 +245,6 @@ function App() {
                         <div className="stat-card">
                             <h3>📁 Projects</h3>
                             <p className="stat-number">{projects.length}</p>
-                        </div>
-                        <div className="stat-card">
-                            <h3>📝 Blog Posts</h3>
-                            <p className="stat-number">{blogs.length}</p>
-                        </div>
-                        <div className="stat-card">
-                            <h3>⭐ Testimonials</h3>
-                            <p className="stat-number">{testimonials.length}</p>
-                        </div>
-                        <div className="stat-card">
-                            <h3>🎯 Skills</h3>
-                            <p className="stat-number">{skills.length}</p>
                         </div>
                         <div className="stat-card">
                             <h3>💬 Messages</h3>
@@ -210,9 +259,39 @@ function App() {
 
                 {activeTab === 'projects' && (
                     <div className="list-container">
-                        <h2>Projects</h2>
+                        <div className="list-header">
+                            <h2>Projects</h2>
+                            <button className="btn-add" onClick={() => {
+                                setShowForm(!showForm);
+                                setEditingId(null);
+                                setFormData({});
+                            }}>
+                                {showForm ? '✕ Cancel' : '+ Add Project'}
+                            </button>
+                        </div>
+
+                        {showForm && (
+                            <form onSubmit={handleAddProject} className="form-container">
+                                <div className="form-row">
+                                    <input type="text" placeholder="Project Name" value={formData.name || ''} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                                    <input type="text" placeholder="Location" value={formData.location || ''} onChange={(e) => setFormData({...formData, location: e.target.value})} required />
+                                </div>
+                                <div className="form-row">
+                                    <input type="text" placeholder="Category" value={formData.category || ''} onChange={(e) => setFormData({...formData, category: e.target.value})} />
+                                    <input type="text" placeholder="Value (e.g. QR 50M)" value={formData.value || ''} onChange={(e) => setFormData({...formData, value: e.target.value})} />
+                                </div>
+                                <textarea placeholder="Description" value={formData.description || ''} onChange={(e) => setFormData({...formData, description: e.target.value})}></textarea>
+                                <input type="text" placeholder="Tags (comma separated)" value={formData.tags || ''} onChange={(e) => setFormData({...formData, tags: e.target.value})} />
+                                <div className="checkbox-group">
+                                    <input type="checkbox" id="published" checked={formData.published || false} onChange={(e) => setFormData({...formData, published: e.target.checked})} />
+                                    <label htmlFor="published">Publish immediately</label>
+                                </div>
+                                <button type="submit" className="btn" disabled={loading}>{loading ? 'Saving...' : (editingId ? 'Update Project' : 'Create Project')}</button>
+                            </form>
+                        )}
+
                         {projects.length === 0 ? (
-                            <p>No projects yet. Create one from your backend.</p>
+                            <p>No projects yet.</p>
                         ) : (
                             <table>
                                 <thead>
@@ -221,6 +300,7 @@ function App() {
                                         <th>Location</th>
                                         <th>Value</th>
                                         <th>Status</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -230,6 +310,14 @@ function App() {
                                             <td>{p.location}</td>
                                             <td>{p.value}</td>
                                             <td>{p.published ? '✅ Published' : '⏳ Draft'}</td>
+                                            <td>
+                                                <button className="btn-small" onClick={() => {
+                                                    setFormData(p);
+                                                    setEditingId(p._id);
+                                                    setShowForm(true);
+                                                }}>Edit</button>
+                                                <button className="btn-small btn-danger" onClick={() => handleDeleteProject(p._id)}>Delete</button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -250,7 +338,9 @@ function App() {
                                         <th>Name</th>
                                         <th>Email</th>
                                         <th>Subject</th>
+                                        <th>Message</th>
                                         <th>Status</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -259,7 +349,11 @@ function App() {
                                             <td>{c.name}</td>
                                             <td>{c.email}</td>
                                             <td>{c.subject}</td>
+                                            <td className="message-preview">{c.message.substring(0, 50)}...</td>
                                             <td><span className={`status ${c.status}`}>{c.status}</span></td>
+                                            <td>
+                                                <button className="btn-small btn-danger" onClick={() => handleDeleteContact(c._id)}>Delete</button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -280,6 +374,7 @@ function App() {
                                         <th>Email</th>
                                         <th>Name</th>
                                         <th>Status</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -288,18 +383,14 @@ function App() {
                                             <td>{s.email}</td>
                                             <td>{s.name || '-'}</td>
                                             <td>{s.status}</td>
+                                            <td>
+                                                <button className="btn-small btn-danger" onClick={() => handleDeleteSubscriber(s._id)}>Delete</button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         )}
-                    </div>
-                )}
-
-                {['blog', 'testimonials', 'skills'].includes(activeTab) && (
-                    <div className="list-container">
-                        <h2 style={{ textTransform: 'capitalize' }}>{activeTab}</h2>
-                        <p>Content management features coming soon. Use your backend API to manage these items.</p>
                     </div>
                 )}
             </div>
