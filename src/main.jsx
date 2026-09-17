@@ -13,12 +13,16 @@ function App() {
     const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('dashboard');
     const [projects, setProjects] = useState([]);
+    const [blogs, setBlogs] = useState([]);
+    const [testimonials, setTestimonials] = useState([]);
+    const [skills, setSkills] = useState([]);
     const [contacts, setContacts] = useState([]);
     const [subscribers, setSubscribers] = useState([]);
     const [showForm, setShowForm] = useState(false);
     const [formData, setFormData] = useState({});
     const [editingId, setEditingId] = useState(null);
     const [token, setToken] = useState('');
+    const [formType, setFormType] = useState('');
 
     useEffect(() => {
         const savedToken = localStorage.getItem('adminToken');
@@ -33,13 +37,19 @@ function App() {
         try {
             const headers = { 'Authorization': `Bearer ${authToken}` };
 
-            const [projRes, contactRes, subRes] = await Promise.all([
+            const [projRes, blogRes, testRes, skillRes, contactRes, subRes] = await Promise.all([
                 fetch(`${API_URL}/projects`, { headers }),
+                fetch(`${API_URL}/blog`, { headers }),
+                fetch(`${API_URL}/testimonials`, { headers }),
+                fetch(`${API_URL}/skills`, { headers }),
                 fetch(`${API_URL}/contact`, { headers }),
                 fetch(`${API_URL}/newsletter`, { headers })
             ]);
 
             if (projRes.ok) setProjects(await projRes.json());
+            if (blogRes.ok) setBlogs(await blogRes.json());
+            if (testRes.ok) setTestimonials(await testRes.json());
+            if (skillRes.ok) setSkills(await skillRes.json());
             if (contactRes.ok) setContacts(await contactRes.json());
             if (subRes.ok) setSubscribers(await subRes.json());
         } catch (err) {
@@ -82,17 +92,16 @@ function App() {
         localStorage.removeItem('adminToken');
         setIsLoggedIn(false);
         setToken('');
-        setUsername('');
-        setPassword('');
     };
 
-    const handleAddProject = async (e) => {
+    const handleSaveItem = async (e, type) => {
         e.preventDefault();
         setLoading(true);
 
         try {
+            const endpoint = type === 'project' ? 'projects' : type === 'blog' ? 'blog' : type === 'testimonial' ? 'testimonials' : 'skills';
             const method = editingId ? 'PATCH' : 'POST';
-            const url = editingId ? `${API_URL}/projects/${editingId}` : `${API_URL}/projects`;
+            const url = editingId ? `${API_URL}/${endpoint}/${editingId}` : `${API_URL}/${endpoint}`;
 
             const response = await fetch(url, {
                 method,
@@ -100,19 +109,11 @@ function App() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({
-                    name: formData.name,
-                    description: formData.description,
-                    category: formData.category,
-                    location: formData.location,
-                    value: formData.value,
-                    published: formData.published || false,
-                    tags: formData.tags ? formData.tags.split(',').map(t => t.trim()) : []
-                })
+                body: JSON.stringify(formData)
             });
 
             if (response.ok) {
-                setSuccess(editingId ? 'Project updated!' : 'Project created!');
+                setSuccess(`${type} ${editingId ? 'updated' : 'created'}!`);
                 setShowForm(false);
                 setFormData({});
                 setEditingId(null);
@@ -120,67 +121,65 @@ function App() {
                 setTimeout(() => setSuccess(''), 3000);
             }
         } catch (err) {
-            setError('Failed to save project');
+            setError('Failed to save');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleDeleteProject = async (id) => {
-        if (!window.confirm('Delete this project?')) return;
+    const handleDelete = async (type, id) => {
+        if (!window.confirm(`Delete this ${type}?`)) return;
 
         try {
-            const response = await fetch(`${API_URL}/projects/${id}`, {
+            const endpoint = type === 'project' ? 'projects' : type === 'blog' ? 'blog' : type === 'testimonial' ? 'testimonials' : type === 'contact' ? 'contact' : type === 'subscriber' ? 'newsletter' : 'skills';
+
+            const response = await fetch(`${API_URL}/${endpoint}/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
             if (response.ok) {
-                setSuccess('Project deleted!');
+                setSuccess(`${type} deleted!`);
                 fetchAllData(token);
                 setTimeout(() => setSuccess(''), 3000);
             }
         } catch (err) {
-            setError('Failed to delete project');
+            setError('Failed to delete');
         }
     };
 
-    const handleDeleteContact = async (id) => {
-        if (!window.confirm('Delete this message?')) return;
+    const renderTable = (items, type, columns) => {
+        if (items.length === 0) return <p className="empty-state">No {type}s yet.</p>;
 
-        try {
-            const response = await fetch(`${API_URL}/contact/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (response.ok) {
-                setSuccess('Message deleted!');
-                fetchAllData(token);
-                setTimeout(() => setSuccess(''), 3000);
-            }
-        } catch (err) {
-            setError('Failed to delete message');
-        }
-    };
-
-    const handleDeleteSubscriber = async (id) => {
-        if (!window.confirm('Delete this subscriber?')) return;
-
-        try {
-            const response = await fetch(`${API_URL}/newsletter/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (response.ok) {
-                setSuccess('Subscriber deleted!');
-                fetchAllData(token);
-                setTimeout(() => setSuccess(''), 3000);
-            }
-        } catch (err) {
-            setError('Failed to delete subscriber');
-        }
+        return (
+            <table className="data-table">
+                <thead>
+                    <tr>
+                        {columns.map((col, i) => <th key={i}>{col}</th>)}
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {items.map(item => (
+                        <tr key={item._id}>
+                            {columns.map((col, i) => {
+                                const value = item[col.toLowerCase()] || item[col] || '-';
+                                return <td key={i}>{typeof value === 'boolean' ? (value ? '✅' : '⏳') : String(value).substring(0, 50)}</td>;
+                            })}
+                            <td>
+                                <button className="btn-edit" onClick={() => {
+                                    setFormData(item);
+                                    setEditingId(item._id);
+                                    setFormType(type);
+                                    setShowForm(true);
+                                }}>Edit</button>
+                                <button className="btn-delete" onClick={() => handleDelete(type, item._id)}>Delete</button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        );
     };
 
     if (!isLoggedIn) {
@@ -191,28 +190,14 @@ function App() {
                     <form onSubmit={handleLogin}>
                         <div className="form-group">
                             <label>Username</label>
-                            <input
-                                type="text"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                placeholder="admin"
-                                required
-                            />
+                            <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="admin" required />
                         </div>
                         <div className="form-group">
                             <label>Password</label>
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                placeholder="••••••••"
-                                required
-                            />
+                            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
                         </div>
                         {error && <div className="error">{error}</div>}
-                        <button type="submit" className="btn" disabled={loading}>
-                            {loading ? 'Logging in...' : 'Login'}
-                        </button>
+                        <button type="submit" className="btn" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button>
                     </form>
                 </div>
             </div>
@@ -220,177 +205,166 @@ function App() {
     }
 
     return (
-        <div className="dashboard">
-            <div className="dashboard-header">
-                <div>
-                    <h1>📊 Admin Dashboard</h1>
-                    <p className="subtitle">Manage your portfolio content</p>
+        <div className="admin-container">
+            <div className="sidebar">
+                <div className="sidebar-header">
+                    <h2>Admin</h2>
                 </div>
-                <button className="logout-btn" onClick={handleLogout}>Logout</button>
+                <nav className="sidebar-nav">
+                    <button className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('dashboard'); setShowForm(false); }}>📊 Dashboard</button>
+                    <button className={`nav-item ${activeTab === 'projects' ? 'active' : ''}`} onClick={() => { setActiveTab('projects'); setShowForm(false); }}>📁 Projects</button>
+                    <button className={`nav-item ${activeTab === 'blog' ? 'active' : ''}`} onClick={() => { setActiveTab('blog'); setShowForm(false); }}>📝 Blog</button>
+                    <button className={`nav-item ${activeTab === 'testimonials' ? 'active' : ''}`} onClick={() => { setActiveTab('testimonials'); setShowForm(false); }}>⭐ Testimonials</button>
+                    <button className={`nav-item ${activeTab === 'skills' ? 'active' : ''}`} onClick={() => { setActiveTab('skills'); setShowForm(false); }}>🎯 Skills</button>
+                    <button className={`nav-item ${activeTab === 'contacts' ? 'active' : ''}`} onClick={() => { setActiveTab('contacts'); setShowForm(false); }}>💬 Messages</button>
+                    <button className={`nav-item ${activeTab === 'subscribers' ? 'active' : ''}`} onClick={() => { setActiveTab('subscribers'); setShowForm(false); }}>📧 Subscribers</button>
+                    <hr />
+                    <button className="nav-item logout" onClick={handleLogout}>🚪 Logout</button>
+                </nav>
             </div>
 
-            {success && <div className="success">{success}</div>}
-            {error && <div className="error">{error}</div>}
+            <div className="main-content">
+                <div className="content-header">
+                    <h1>{activeTab.toUpperCase()}</h1>
+                    {success && <div className="success">{success}</div>}
+                    {error && <div className="error">{error}</div>}
+                </div>
 
-            <div className="tabs">
-                <button className={`tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
-                <button className={`tab ${activeTab === 'projects' ? 'active' : ''}`} onClick={() => setActiveTab('projects')}>Projects ({projects.length})</button>
-                <button className={`tab ${activeTab === 'contacts' ? 'active' : ''}`} onClick={() => setActiveTab('contacts')}>Messages ({contacts.length})</button>
-                <button className={`tab ${activeTab === 'subscribers' ? 'active' : ''}`} onClick={() => setActiveTab('subscribers')}>Subscribers ({subscribers.length})</button>
-            </div>
-
-            <div className="content">
                 {activeTab === 'dashboard' && (
-                    <div className="dashboard-stats">
-                        <div className="stat-card">
-                            <h3>📁 Projects</h3>
-                            <p className="stat-number">{projects.length}</p>
-                        </div>
-                        <div className="stat-card">
-                            <h3>💬 Messages</h3>
-                            <p className="stat-number">{contacts.length}</p>
-                        </div>
-                        <div className="stat-card">
-                            <h3>📧 Subscribers</h3>
-                            <p className="stat-number">{subscribers.length}</p>
+                    <div className="dashboard-content">
+                        <div className="stats-grid">
+                            <div className="stat-card">
+                                <h3>📁 Projects</h3>
+                                <p className="stat-number">{projects.length}</p>
+                            </div>
+                            <div className="stat-card">
+                                <h3>📝 Blog Posts</h3>
+                                <p className="stat-number">{blogs.length}</p>
+                            </div>
+                            <div className="stat-card">
+                                <h3>⭐ Testimonials</h3>
+                                <p className="stat-number">{testimonials.length}</p>
+                            </div>
+                            <div className="stat-card">
+                                <h3>🎯 Skills</h3>
+                                <p className="stat-number">{skills.length}</p>
+                            </div>
+                            <div className="stat-card">
+                                <h3>💬 Messages</h3>
+                                <p className="stat-number">{contacts.length}</p>
+                            </div>
+                            <div className="stat-card">
+                                <h3>📧 Subscribers</h3>
+                                <p className="stat-number">{subscribers.length}</p>
+                            </div>
                         </div>
                     </div>
                 )}
 
                 {activeTab === 'projects' && (
-                    <div className="list-container">
-                        <div className="list-header">
-                            <h2>Projects</h2>
-                            <button className="btn-add" onClick={() => {
+                    <div className="content-section">
+                        <div className="section-header">
+                            <button className="btn-primary" onClick={() => {
                                 setShowForm(!showForm);
                                 setEditingId(null);
                                 setFormData({});
-                            }}>
-                                {showForm ? '✕ Cancel' : '+ Add Project'}
-                            </button>
+                                setFormType('project');
+                            }}>+ Add Project</button>
                         </div>
-
                         {showForm && (
-                            <form onSubmit={handleAddProject} className="form-container">
-                                <div className="form-row">
-                                    <input type="text" placeholder="Project Name" value={formData.name || ''} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
-                                    <input type="text" placeholder="Location" value={formData.location || ''} onChange={(e) => setFormData({...formData, location: e.target.value})} required />
-                                </div>
-                                <div className="form-row">
-                                    <input type="text" placeholder="Category" value={formData.category || ''} onChange={(e) => setFormData({...formData, category: e.target.value})} />
-                                    <input type="text" placeholder="Value (e.g. QR 50M)" value={formData.value || ''} onChange={(e) => setFormData({...formData, value: e.target.value})} />
-                                </div>
+                            <form onSubmit={(e) => handleSaveItem(e, 'project')} className="form-container">
+                                <input type="text" placeholder="Name" value={formData.name || ''} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                                <input type="text" placeholder="Location" value={formData.location || ''} onChange={(e) => setFormData({...formData, location: e.target.value})} required />
+                                <input type="text" placeholder="Value" value={formData.value || ''} onChange={(e) => setFormData({...formData, value: e.target.value})} />
                                 <textarea placeholder="Description" value={formData.description || ''} onChange={(e) => setFormData({...formData, description: e.target.value})}></textarea>
-                                <input type="text" placeholder="Tags (comma separated)" value={formData.tags || ''} onChange={(e) => setFormData({...formData, tags: e.target.value})} />
-                                <div className="checkbox-group">
-                                    <input type="checkbox" id="published" checked={formData.published || false} onChange={(e) => setFormData({...formData, published: e.target.checked})} />
-                                    <label htmlFor="published">Publish immediately</label>
-                                </div>
-                                <button type="submit" className="btn" disabled={loading}>{loading ? 'Saving...' : (editingId ? 'Update Project' : 'Create Project')}</button>
+                                <label><input type="checkbox" checked={formData.published || false} onChange={(e) => setFormData({...formData, published: e.target.checked})} /> Publish</label>
+                                <button type="submit" className="btn" disabled={loading}>{loading ? 'Saving...' : (editingId ? 'Update' : 'Create')}</button>
                             </form>
                         )}
+                        {renderTable(projects, 'project', ['Name', 'Location', 'Value', 'Published'])}
+                    </div>
+                )}
 
-                        {projects.length === 0 ? (
-                            <p>No projects yet.</p>
-                        ) : (
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Location</th>
-                                        <th>Value</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {projects.map(p => (
-                                        <tr key={p._id}>
-                                            <td>{p.name}</td>
-                                            <td>{p.location}</td>
-                                            <td>{p.value}</td>
-                                            <td>{p.published ? '✅ Published' : '⏳ Draft'}</td>
-                                            <td>
-                                                <button className="btn-small" onClick={() => {
-                                                    setFormData(p);
-                                                    setEditingId(p._id);
-                                                    setShowForm(true);
-                                                }}>Edit</button>
-                                                <button className="btn-small btn-danger" onClick={() => handleDeleteProject(p._id)}>Delete</button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                {activeTab === 'blog' && (
+                    <div className="content-section">
+                        <div className="section-header">
+                            <button className="btn-primary" onClick={() => {
+                                setShowForm(!showForm);
+                                setEditingId(null);
+                                setFormData({});
+                                setFormType('blog');
+                            }}>+ Add Blog</button>
+                        </div>
+                        {showForm && (
+                            <form onSubmit={(e) => handleSaveItem(e, 'blog')} className="form-container">
+                                <input type="text" placeholder="Title" value={formData.title || ''} onChange={(e) => setFormData({...formData, title: e.target.value})} required />
+                                <input type="text" placeholder="Slug" value={formData.slug || ''} onChange={(e) => setFormData({...formData, slug: e.target.value})} />
+                                <textarea placeholder="Content" value={formData.content || ''} onChange={(e) => setFormData({...formData, content: e.target.value})}></textarea>
+                                <input type="text" placeholder="Author" value={formData.author || ''} onChange={(e) => setFormData({...formData, author: e.target.value})} />
+                                <label><input type="checkbox" checked={formData.published || false} onChange={(e) => setFormData({...formData, published: e.target.checked})} /> Publish</label>
+                                <button type="submit" className="btn" disabled={loading}>{loading ? 'Saving...' : (editingId ? 'Update' : 'Create')}</button>
+                            </form>
                         )}
+                        {renderTable(blogs, 'blog', ['Title', 'Author', 'Published'])}
+                    </div>
+                )}
+
+                {activeTab === 'testimonials' && (
+                    <div className="content-section">
+                        <div className="section-header">
+                            <button className="btn-primary" onClick={() => {
+                                setShowForm(!showForm);
+                                setEditingId(null);
+                                setFormData({});
+                                setFormType('testimonial');
+                            }}>+ Add Testimonial</button>
+                        </div>
+                        {showForm && (
+                            <form onSubmit={(e) => handleSaveItem(e, 'testimonial')} className="form-container">
+                                <input type="text" placeholder="Name" value={formData.name || ''} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                                <input type="text" placeholder="Company" value={formData.company || ''} onChange={(e) => setFormData({...formData, company: e.target.value})} />
+                                <textarea placeholder="Message" value={formData.message || ''} onChange={(e) => setFormData({...formData, message: e.target.value})}></textarea>
+                                <input type="number" placeholder="Rating (1-5)" min="1" max="5" value={formData.rating || ''} onChange={(e) => setFormData({...formData, rating: parseInt(e.target.value)})} />
+                                <label><input type="checkbox" checked={formData.published || false} onChange={(e) => setFormData({...formData, published: e.target.checked})} /> Publish</label>
+                                <button type="submit" className="btn" disabled={loading}>{loading ? 'Saving...' : (editingId ? 'Update' : 'Create')}</button>
+                            </form>
+                        )}
+                        {renderTable(testimonials, 'testimonial', ['Name', 'Company', 'Rating', 'Published'])}
+                    </div>
+                )}
+
+                {activeTab === 'skills' && (
+                    <div className="content-section">
+                        <div className="section-header">
+                            <button className="btn-primary" onClick={() => {
+                                setShowForm(!showForm);
+                                setEditingId(null);
+                                setFormData({});
+                                setFormType('skill');
+                            }}>+ Add Skill</button>
+                        </div>
+                        {showForm && (
+                            <form onSubmit={(e) => handleSaveItem(e, 'skill')} className="form-container">
+                                <input type="text" placeholder="Name" value={formData.name || ''} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                                <input type="number" placeholder="Level (0-100)" min="0" max="100" value={formData.level || ''} onChange={(e) => setFormData({...formData, level: parseInt(e.target.value)})} />
+                                <input type="text" placeholder="Category" value={formData.category || ''} onChange={(e) => setFormData({...formData, category: e.target.value})} />
+                                <label><input type="checkbox" checked={formData.published || false} onChange={(e) => setFormData({...formData, published: e.target.checked})} /> Publish</label>
+                                <button type="submit" className="btn" disabled={loading}>{loading ? 'Saving...' : (editingId ? 'Update' : 'Create')}</button>
+                            </form>
+                        )}
+                        {renderTable(skills, 'skill', ['Name', 'Level', 'Category', 'Published'])}
                     </div>
                 )}
 
                 {activeTab === 'contacts' && (
-                    <div className="list-container">
-                        <h2>Contact Messages</h2>
-                        {contacts.length === 0 ? (
-                            <p>No messages yet.</p>
-                        ) : (
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Email</th>
-                                        <th>Subject</th>
-                                        <th>Message</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {contacts.map(c => (
-                                        <tr key={c._id}>
-                                            <td>{c.name}</td>
-                                            <td>{c.email}</td>
-                                            <td>{c.subject}</td>
-                                            <td className="message-preview">{c.message.substring(0, 50)}...</td>
-                                            <td><span className={`status ${c.status}`}>{c.status}</span></td>
-                                            <td>
-                                                <button className="btn-small btn-danger" onClick={() => handleDeleteContact(c._id)}>Delete</button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
+                    <div className="content-section">
+                        {renderTable(contacts, 'contact', ['Name', 'Email', 'Subject', 'Status'])}
                     </div>
                 )}
 
                 {activeTab === 'subscribers' && (
-                    <div className="list-container">
-                        <h2>Newsletter Subscribers</h2>
-                        {subscribers.length === 0 ? (
-                            <p>No subscribers yet.</p>
-                        ) : (
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Email</th>
-                                        <th>Name</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {subscribers.map(s => (
-                                        <tr key={s._id}>
-                                            <td>{s.email}</td>
-                                            <td>{s.name || '-'}</td>
-                                            <td>{s.status}</td>
-                                            <td>
-                                                <button className="btn-small btn-danger" onClick={() => handleDeleteSubscriber(s._id)}>Delete</button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
+                    <div className="content-section">
+                        {renderTable(subscribers, 'subscriber', ['Email', 'Name', 'Status'])}
                     </div>
                 )}
             </div>
