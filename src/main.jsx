@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import './styles.css';
 
-const API_URL = 'http://localhost:3000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 const BACKEND_ORIGIN = API_URL.replace(/\/api\/?$/, '');
 function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
